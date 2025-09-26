@@ -7,47 +7,59 @@ import os
 st.set_page_config(page_title="Simple Finance App", page_icon="💰", layout="wide")
 
 category_file = "categories.json"
+budget_file = "budgets.json"
 
+# SESSION STATE SETUP 
 if "categories" not in st.session_state:
-    st.session_state.categories = {
-        "Uncategorized": [],
-    }
-    
+    st.session_state.categories = {"Uncategorized": []}
+
 if os.path.exists(category_file):
     with open(category_file, "r") as f:
         st.session_state.categories = json.load(f)
-        
+
+if "budgets" not in st.session_state:
+    st.session_state.budgets = {}
+
+if os.path.exists(budget_file):
+    with open(budget_file, "r") as f:
+        st.session_state.budgets = json.load(f)
+
+
+# HELPERS 
 def save_categories():
     with open(category_file, "w") as f:
         json.dump(st.session_state.categories, f)
 
+
+def save_budgets():
+    with open(budget_file, "w") as f:
+        json.dump(st.session_state.budgets, f)
+
+
 def categorize_transactions(df):
     df["Category"] = "Uncategorized"
-    
     for category, keywords in st.session_state.categories.items():
         if category == "Uncategorized" or not keywords:
             continue
-        
         lowered_keywords = [keyword.lower().strip() for keyword in keywords]
-        
         for idx, row in df.iterrows():
             details = row["Details"].lower().strip()
             if details in lowered_keywords:
                 df.at[idx, "Category"] = category
-                
-    return df  
+    return df
+
 
 def load_transactions(file):
     try:
         df = pd.read_csv(file)
         df.columns = [col.strip() for col in df.columns]
-        df["Amount"] = df["Amount"].str.replace(",", "").astype(float)
-        df["Date"] = pd.to_datetime(df["Date"], format="%d %b %Y") 
-        
+        df["Amount"] = df["Amount"].astype(str).str.replace(",", "").astype(float)
+        df["Date"] = pd.to_datetime(df["Date"], format="%d %b %Y")
         return categorize_transactions(df)
     except Exception as e:
         st.error(f"Error processing file: {str(e)}")
         return None
+
 
 def add_keyword_to_category(category, keyword):
     keyword = keyword.strip()
@@ -55,86 +67,184 @@ def add_keyword_to_category(category, keyword):
         st.session_state.categories[category].append(keyword)
         save_categories()
         return True
-    
     return False
 
+
+# MAIN APP 
 def main():
-    st.title("Simple Finance Dashboard")
-    
+    st.title("💰 Simple Finance Dashboard")
+
     uploaded_file = st.file_uploader("Upload your transaction CSV file", type=["csv"])
-    
+
     if uploaded_file is not None:
         df = load_transactions(uploaded_file)
-        
+
         if df is not None:
             debits_df = df[df["Debit/Credit"] == "Debit"].copy()
             credits_df = df[df["Debit/Credit"] == "Credit"].copy()
-            
             st.session_state.debits_df = debits_df.copy()
-            
-            tab1, tab2 = st.tabs(["Expenses (Debits)", "Payments (Credits)"])
+
+            tab1, tab2, tab3 = st.tabs(
+                ["Expenses (Debits)", "Payments (Credits)", "Budgets & Trends"]
+            )
+
+            # --- TAB 1: EXPENSES ---
             with tab1:
                 new_category = st.text_input("New Category Name")
                 add_button = st.button("Add Category")
-                
+
                 if add_button and new_category:
                     if new_category not in st.session_state.categories:
                         st.session_state.categories[new_category] = []
                         save_categories()
                         st.rerun()
-                
+
                 st.subheader("Your Expenses")
                 edited_df = st.data_editor(
-                    st.session_state.debits_df[["Date", "Details", "Amount", "Category"]],
+                    st.session_state.debits_df[
+                        ["Date", "Details", "Amount", "Category"]
+                    ],
                     column_config={
                         "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
-                        "Amount": st.column_config.NumberColumn("Amount", format="%.2f AED"),
+                        "Amount": st.column_config.NumberColumn(
+                            "Amount", format="%.2f AED"
+                        ),
                         "Category": st.column_config.SelectboxColumn(
-                            "Category",
-                            options=list(st.session_state.categories.keys())
-                        )
+                            "Category", options=list(st.session_state.categories.keys())
+                        ),
                     },
                     hide_index=True,
                     use_container_width=True,
-                    key="category_editor"
+                    key="category_editor",
                 )
-                
+
                 save_button = st.button("Apply Changes", type="primary")
                 if save_button:
                     for idx, row in edited_df.iterrows():
                         new_category = row["Category"]
-                        if new_category == st.session_state.debits_df.at[idx, "Category"]:
+                        if (
+                            new_category
+                            == st.session_state.debits_df.at[idx, "Category"]
+                        ):
                             continue
-                        
                         details = row["Details"]
                         st.session_state.debits_df.at[idx, "Category"] = new_category
                         add_keyword_to_category(new_category, details)
-                        
-                st.subheader('Expense Summary')
-                category_totals = st.session_state.debits_df.groupby("Category")["Amount"].sum().reset_index()
+
+                st.subheader("Expense Summary")
+                category_totals = (
+                    st.session_state.debits_df.groupby("Category")["Amount"]
+                    .sum()
+                    .reset_index()
+                )
                 category_totals = category_totals.sort_values("Amount", ascending=False)
-                
+
                 st.dataframe(
-                    category_totals, 
+                    category_totals,
                     column_config={
-                     "Amount": st.column_config.NumberColumn("Amount", format="%.2f AED")   
+                        "Amount": st.column_config.NumberColumn(
+                            "Amount", format="%.2f AED"
+                        )
                     },
                     use_container_width=True,
-                    hide_index=True
+                    hide_index=True,
                 )
-                
+
                 fig = px.pie(
                     category_totals,
                     values="Amount",
                     names="Category",
-                    title="Expenses by Category"
+                    title="Expenses by Category",
                 )
                 st.plotly_chart(fig, use_container_width=True)
-                
+
+            # --- TAB 2: PAYMENTS ---
             with tab2:
                 st.subheader("Payments Summary")
                 total_payments = credits_df["Amount"].sum()
                 st.metric("Total Payments", f"{total_payments:,.2f} AED")
                 st.write(credits_df)
-        
+
+            # --- TAB 3: BUDGETS + TRENDS ---
+            with tab3:
+                st.subheader("Set Budgets per Category")
+
+                for category in st.session_state.categories.keys():
+                    current_budget = st.session_state.budgets.get(category, 0.0)
+                    budget = st.number_input(
+                        f"Budget for {category} (AED)",
+                        min_value=0.0,
+                        value=float(current_budget),
+                        step=100.0,
+                        key=f"budget_{category}",
+                    )
+                    st.session_state.budgets[category] = budget
+
+                if st.button("Save Budgets"):
+                    save_budgets()
+                    st.success("Budgets saved!")
+
+                st.subheader("Budget Utilization")
+                category_totals = (
+                    st.session_state.debits_df.groupby("Category")["Amount"]
+                    .sum()
+                    .reset_index()
+                )
+
+                for _, row in category_totals.iterrows():
+                    cat = row["Category"]
+                    spent = row["Amount"]
+                    budget = st.session_state.budgets.get(cat, 0)
+
+                    if budget > 0:
+                        percent = min(spent / budget, 1.0)
+                        st.progress(percent, text=f"{cat}: {spent:.2f}/{budget:.2f} AED")
+                        if spent > budget:
+                            st.error(f"⚠️ Overspent in {cat} by {spent - budget:.2f} AED")
+                    else:
+                        st.info(f"No budget set for {cat} (Spent {spent:.2f} AED)")
+
+                # --- Expense Trends ---
+                st.subheader("Expense Trends")
+
+                # Monthly Trends
+                st.session_state.debits_df["Month"] = st.session_state.debits_df[
+                    "Date"
+                ].dt.to_period("M")
+                monthly_expenses = (
+                    st.session_state.debits_df.groupby("Month")["Amount"]
+                    .sum()
+                    .reset_index()
+                )
+                monthly_expenses["Month"] = monthly_expenses["Month"].astype(str)
+
+                fig_monthly = px.line(
+                    monthly_expenses,
+                    x="Month",
+                    y="Amount",
+                    markers=True,
+                    title="Monthly Expense Trend",
+                )
+                st.plotly_chart(fig_monthly, use_container_width=True)
+
+                # Weekly Trends
+                st.session_state.debits_df["Week"] = st.session_state.debits_df[
+                    "Date"
+                ].dt.to_period("W").astype(str)
+                weekly_expenses = (
+                    st.session_state.debits_df.groupby("Week")["Amount"]
+                    .sum()
+                    .reset_index()
+                )
+
+                fig_weekly = px.line(
+                    weekly_expenses,
+                    x="Week",
+                    y="Amount",
+                    markers=True,
+                    title="Weekly Expense Trend",
+                )
+                st.plotly_chart(fig_weekly, use_container_width=True)
+
+
 main()
