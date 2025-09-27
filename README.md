@@ -12,13 +12,13 @@ This project helps you upload your bank transactions, categorize expenses, and v
 - Track **debits (expenses)** and **credits (income)**
 - Interactive **expense summary** with pie charts
 - Save categories for future uploads
+- Category-wise budgets and overspending alerts ✅ (new add on)
+- Monthly/weekly expense trends (new add on)
 
 ---
 
 ## 📌 Roadmap
 Planned upcoming features:
-- [ ] Category-wise budgets and overspending alerts ✅ (in progress)
-- [ ] Monthly/weekly expense trends ✅
 - [ ] Export reports (CSV/PDF)
 - [ ] Smart auto-categorization using ML
 - [ ] Investment & savings tracker
